@@ -495,6 +495,15 @@ function get_params_and_initial_conditions(
     # Floor zero-productivity sectors (see MIN_PRODUCTIVITY definition at top of file).
     alpha_s = max.(alpha_s, MIN_PRODUCTIVITY)
     kappa_s = max.(kappa_s, MIN_PRODUCTIVITY)
+    # Zero-output sectors host no real activity, but the scaling forces one
+    # placeholder firm into each. With beta_s = 1, its materials equal its
+    # output, so value added and marginal profit are exactly zero.
+    degenerate = vec(output) .== 0
+    beta_s[degenerate] .= 1.0
+    # Cap kappa_s as well, so that no placeholder firm carries unfunded
+    # capital K_i = Y_i / (omega * kappa_s). That capital would distort the
+    # loan shares and with them the size of the calibrated profit pool.
+    kappa_s[degenerate] .= 1.0 / MIN_PRODUCTIVITY
     tau_Y_s = taxes_products ./ output
     tau_K_s = taxes_production ./ output
     # Handle NaN for sectors with zero output
