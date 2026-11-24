@@ -438,6 +438,15 @@ function get_params_and_initial_conditions(
         sum(government_consumption) -
         interest_government_debt_quarterly / timescale -
         govt_deficit_term
+    # The model cannot track the household debt that a negative `sb_other`
+    # would need, so the benefits sum is floored at zero and the removed
+    # amount is added to other_net_transfers, keeping disposable income intact.
+    benefits_sum =
+        social_benefits + other_net_transfers - unemployment_benefits - pension_benefits
+    if benefits_sum < 0
+        other_net_transfers -= benefits_sum
+        benefits_sum = 0.0
+    end
     disposable_income =
         sum(wages) + mixed_income + property_income + social_benefits + other_net_transfers -
         household_social_contributions - household_income_tax - capital_taxes
@@ -546,10 +555,14 @@ function get_params_and_initial_conditions(
         (r_bar .+ mu) .* firm_debt_quarterly .* L_s_alloc .+
         r_bar .* firm_cash_quarterly .* D_s_alloc
 
+    # The model floors bank-owner dividends at zero (max(0, Pi_k)), so the
+    # theta_DIV/tau_FIRM denominators must use the floored bank profit too.
+    bank_profit =
+        firm_interest_quarterly - r_bar * (firm_debt_quarterly - bank_equity_quarterly)
+    bank_profit = max(0.0, bank_profit)
     tau_FIRM =
         timescale * corporate_tax / (
-        sum(Bit.pos(profit_after_interest_s)) +
-            firm_interest_quarterly - r_bar * (firm_debt_quarterly - bank_equity_quarterly)
+        sum(Bit.pos(profit_after_interest_s)) + bank_profit
     )
     tau_VAT = taxes_products_household / sum(household_consumption)
     # tau_SIF is computed earlier (needed for the model_profit_s calculation above)
@@ -561,8 +574,7 @@ function get_params_and_initial_conditions(
     psi_H = (sum(capitalformation_dwellings) + sum(taxes_products_capitalformation_dwellings)) / disposable_income
     theta_DIV =
         timescale * (mixed_income + property_income) / (
-        sum(Bit.pos(profit_after_interest_s)) +
-            firm_interest_quarterly - r_bar * (firm_debt_quarterly - bank_equity_quarterly) -
+        sum(Bit.pos(profit_after_interest_s)) + bank_profit -
             timescale * corporate_tax
     )
     r_G = interest_government_debt_quarterly / government_debt_quarterly
@@ -730,12 +742,10 @@ function get_params_and_initial_conditions(
     L_I = firm_debt_quarterly
     w_UB = timescale * unemployment_benefits / unemployed
     sb_inact = timescale * pension_benefits / inactive
-    # Nonnegative by model construction, but HU 2024Q1: negative net transfers.
-    sb_other = max(
-        0.0,
-        timescale * (social_benefits + other_net_transfers - unemployment_benefits - pension_benefits) /
-            (sum(employees) + unemployed + inactive + sum(firms) + 1),
-    )
+    # `sb_other` is nonnegative because it is derived from `benefits_sum`,
+    # which was floored at zero.
+    sb_other = timescale * benefits_sum /
+        (sum(employees) + unemployed + inactive + sum(firms) + 1)
     D_H = household_cash_quarterly
     K_H = sum(dwellings)
     L_G = government_debt_quarterly
